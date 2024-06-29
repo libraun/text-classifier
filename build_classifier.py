@@ -2,21 +2,17 @@ import pickle
 import math
 import json
 import sys
-import io
 import os
 
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from typing import List, Tuple
-#from torch.nn.utils.rnn import pad_sequence
+from typing import List
 
-import torch.optim as optim
-
-from text_sentiment_classifier import TextSentimentClassifier
+from text_classifier import TextClassifier
 import text_utils
 
+import text_tensor_builder
 from text_tensor_builder import TextTensorBuilder
 
 from constants import *
@@ -90,22 +86,29 @@ if __name__ == "__main__":
     trg_model_path = sys.argv[2]
 
     if not os.path.isfile(dataset_path):
-        print("ERROR: Dataset filepath could not be found!")
+        print("ERROR: Either the dataset filepath could not be found.")
         exit(EXIT_FAILURE)
     
-    trg_data_len = int(sys.argv[2])
+    trg_data_len = int(sys.argv[3])
     data_len_str = str(trg_data_len)
+
+    num_epochs = int(sys.argv[4])
 
     with open(dataset_path, "r") as f:
         json_data = json.load(f)
         
-    message_sentiment_pairs, sentiment_ids = load_data(json_data) 
+    message_sentiment_pairs, sentiment_ids = load_data(json_data, trg_data_len) 
 
-    messages = (p[0] for p in message_sentiment_pairs)
+    messages = tuple([p[0] for p in message_sentiment_pairs])
+    print(len(messages))
     sentiment_ids = tuple(sentiment_ids)
-    
+
+    with open("sentiment_ids.pickle", "wb+") as f:
+        pickle.dump(sentiment_ids, f)
+
     tensor_builder = TextTensorBuilder(messages)
-    tensor_builder.save_to_path("tensor_builder.pickle")
+
+    text_tensor_builder.save_to_path(tensor_builder, "tensor_builder.pickle")
 
     en_vocab = tensor_builder.lang_vocab
 
@@ -127,23 +130,29 @@ if __name__ == "__main__":
     valid_split = sentiment_tensors[train_end_idx : valid_end_idx]
     test_split = sentiment_tensors[valid_end_idx : ]
 
-    train_tensor = DataLoader(train_split, batch_size=BATCH_SIZE, shuffle=True,collate_fn=collate_sentiment_data)
-    valid_tensor = DataLoader(valid_split, batch_size=BATCH_SIZE, shuffle=True,collate_fn=collate_sentiment_data)
-    test_tensor = DataLoader(test_split, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_sentiment_data)
+    train_tensor = DataLoader(
+        train_split, batch_size=BATCH_SIZE, 
+        shuffle=True,collate_fn=collate_sentiment_data)
+    valid_tensor = DataLoader(
+        valid_split, batch_size=BATCH_SIZE, 
+        shuffle=True,collate_fn=collate_sentiment_data)
+    test_tensor = DataLoader(
+        test_split, batch_size=BATCH_SIZE, 
+        shuffle=True, collate_fn=collate_sentiment_data)
 
     num_input_classes = len(en_vocab)
     num_output_classes = len(sentiment_ids)
 
-    model = TextSentimentClassifier(
+    model = TextClassifier(
         num_input_classes, num_output_classes, 
         embed_dim=EMBED_DIM, padding_idx=en_vocab["<pad>"], 
         optimizer="adam")
 
-    train_loss_vals, valid_loss_vals = model.train_model(train_tensor, valid_tensor, 10)
+    if num_epochs > 0:
+        train_loss_vals, valid_loss_vals = model.train_model(train_tensor, valid_tensor, num_epochs)
 
     for i in range(len(train_loss_vals)):
         print(train_loss_vals[i], valid_loss_vals[i])
-
 
     torch.save(model, trg_model_path)
 
