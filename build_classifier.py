@@ -64,25 +64,22 @@ def save_tensor(data, path, collate_fn):
     )
     torch.save(data_iter, path)
 
-def create_vocab(data: List[Tuple[str, str]]):
-    query_data = [pair[0] for pair in data]
-
-    tensor_builder = TextTensorBuilder(EMBED_DIM, query_data)
-    return tensor_builder
-
 def get_sentiment_label(sentiment: str, all_sentiments: List[str]) -> int:
 
     return all_sentiments.index(sentiment)
-
 
 def collate_sentiment_data(data_batch):
     
     in_batch, out_batch, offsets = [], [], [0]
     for (in_item, out_item) in data_batch:
+
         in_batch.append(in_item)
         out_batch.append(out_item)
+
         offsets.append(in_item.size(0))
+
     offsets = torch.tensor(offsets[:-1]).cumsum(dim=0)
+
     in_batch = torch.cat(in_batch)
     out_batch = torch.tensor(out_batch, dtype=torch.int64)
     return in_batch,out_batch,offsets
@@ -90,11 +87,12 @@ def collate_sentiment_data(data_batch):
 if __name__ == "__main__":
 
     dataset_path = sys.argv[1]
+    trg_model_path = sys.argv[2]
 
     if not os.path.isfile(dataset_path):
         print("ERROR: Dataset filepath could not be found!")
         exit(EXIT_FAILURE)
-
+    
     trg_data_len = int(sys.argv[2])
     data_len_str = str(trg_data_len)
 
@@ -103,33 +101,25 @@ if __name__ == "__main__":
         
     message_sentiment_pairs, sentiment_ids = load_data(json_data) 
 
-    messages = [p[0] for p in message_sentiment_pairs]
-    sentiment_ids = list(sentiment_ids)
+    messages = (p[0] for p in message_sentiment_pairs)
+    sentiment_ids = tuple(sentiment_ids)
     
-    tensor_builder = create_vocab(messages)
+    tensor_builder = TextTensorBuilder(messages)
+    tensor_builder.save_to_path("tensor_builder.pickle")
 
-    tokenizer = tensor_builder.tokenizer
-    en_vocab = tensor_builder.get_vocab()
+    en_vocab = tensor_builder.lang_vocab
 
-    with open("en_vocab.pickle", "wb+") as f:
-        pickler = pickle.Pickler(f)
-        pickler.dump(en_vocab)
-
-    count = 0 # Record progress
     msg_tensors, sentiment_tensors = list(), list()
     for pair in message_sentiment_pairs:
             
-        input_msg = pair[0]
-        input_sentiment = pair[1]
+        msg, sentiment = pair[0], pair[1]
 
-        sentiment_tensor = get_sentiment_label(pair[1], sentiment_ids)
-
-        msg_tensor = tensor_builder.convert_text_to_tensor(
-            input_msg, tokenize=True )
+        sentiment_tensor = get_sentiment_label(sentiment, sentiment_ids)
+        msg_tensor = tensor_builder.convert_text_to_tensor(msg)
 
         sentiment_tensors.append((msg_tensor, sentiment_tensor))
 
-    # "This can't be how this done" - the guy trying to reinvent the wheel
+    # "This can't be how this done" - the guy trying to reinvent the wheelgi
     train_end_idx = math.floor(len(sentiment_tensors) * 0.8)
     valid_end_idx = math.floor(len(sentiment_tensors) * 0.1) + train_end_idx
 
@@ -137,15 +127,28 @@ if __name__ == "__main__":
     valid_split = sentiment_tensors[train_end_idx : valid_end_idx]
     test_split = sentiment_tensors[valid_end_idx : ]
 
-    train_tensor = DataLoader(train_split, batch_size=BATCH_SIZE, shuffle=False,collate_fn=collate_sentiment_data)
-    valid_tensor = DataLoader(valid_split, batch_size=BATCH_SIZE, shuffle=False,collate_fn=collate_sentiment_data)
-    test_tensor = DataLoader(test_split, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_sentiment_data)
+    train_tensor = DataLoader(train_split, batch_size=BATCH_SIZE, shuffle=True,collate_fn=collate_sentiment_data)
+    valid_tensor = DataLoader(valid_split, batch_size=BATCH_SIZE, shuffle=True,collate_fn=collate_sentiment_data)
+    test_tensor = DataLoader(test_split, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_sentiment_data)
 
-    model = TextSentimentClassifier(len(en_vocab), , EMBED_DIM, en_vocab["<pad>"])
+    num_input_classes = len(en_vocab)
+    num_output_classes = len(sentiment_ids)
 
-    optimizer = optim.Adam(model.parameters())
-    criterion = nn.CrossEntropyLoss()
+    model = TextSentimentClassifier(
+        num_input_classes, num_output_classes, 
+        embed_dim=EMBED_DIM, padding_idx=en_vocab["<pad>"], 
+        optimizer="adam")
 
-    train_loss_vals, valid_loss_vals = model.train_model(10)
+    train_loss_vals, valid_loss_vals = model.train_model(train_tensor, valid_tensor, 10)
+
+    for i in range(len(train_loss_vals)):
+        print(train_loss_vals[i], valid_loss_vals[i])
+
+
+    torch.save(model, trg_model_path)
 
     exit(EXIT_SUCCESS)
+
+    
+
+    
