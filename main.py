@@ -2,7 +2,9 @@ import sys
 import os
 import pickle
 
-import text_tensor_builder
+import torch
+
+from text_tensor_builder import TextTensorBuilder
 
 from text_classifier import TextClassifier
 
@@ -17,23 +19,23 @@ if __name__ == "__main__":
         print("ERROR: Please specify model path.")
         exit(EXIT_FAILURE)
 
-    tensor_builder = text_tensor_builder.load_from_path(
-        "tensor_builder.pickle")
+    with open("en_vocab.pickle", "rb") as f:
+        en_vocab = pickle.load(f)
     
-    model = TextClassifier(
-        input_features=len(tensor_builder.lang_vocab), 
-        output_features=8, 
-        embed_dim=EMBED_DIM,
-        padding_idx=tensor_builder.lang_vocab["<pad>"]
-    )
     with open("sentiment_ids.pickle", "rb") as f:
         sentiment_ids = pickle.load(f)
+    
+    model = TextClassifier(
+        input_features=len(en_vocab), 
+        output_features=len(sentiment_ids), 
+        embed_dim=EMBED_DIM,
+        padding_idx=en_vocab["<PAD_IDX>"]
+    )
 
-    print(sentiment_ids)
+    model.load_state_dict(torch.load("intent_classifier.pt"))
 
-    query_tensor = tensor_builder.convert_text_to_tensor(input_msg)
+    query_tensor = TextTensorBuilder.text_to_tensor(en_vocab, input_msg)
     idx = model.predict(query_tensor)
-    print(idx)
 
     result = sentiment_ids[idx]
 

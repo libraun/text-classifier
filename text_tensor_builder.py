@@ -2,70 +2,38 @@ import pickle
 
 import torch
 import torchtext
+
 torchtext.disable_torchtext_deprecation_warning()
 
-from typing import List
+from typing import List, Hashable
 from collections import Counter, OrderedDict
 from torchtext.vocab import vocab
 from torchtext.data.utils import get_tokenizer
 
 class TextTensorBuilder:
 
-    def __init__(self,  
-                 data: List[str],
-                 tokenizer: str="spacy",
-                 tokenizer_lang: str="en_core_web_sm",
-                 specials: List[str]=["<unk>"],
-                 default_token: str="<unk>"):
+    tokenizer = get_tokenizer("spacy", "en_core_web_sm")
+
+    @classmethod
+    def text_to_tensor(cls, lang_vocab,
+                       doc: str | List[str], 
+                       tokenize: bool=True ) -> torch.Tensor: 
         
-        if default_token not in specials:
-            specials.insert(0, default_token)
+        tokens = doc if not tokenize else cls.tokenizer(doc)
 
-        self.tokenizer = get_tokenizer(tokenizer,tokenizer_lang)
-        self.lang_vocab = self.__build_vocab__(data, specials)
-
-        self.lang_vocab.set_default_index(self.lang_vocab[default_token])
-
-    @staticmethod
-    def load_from_path(self, pk_path: str):
-        
-        with open(pickle_file_path, "rb") as f:
-
-            state_dict = pickle.load(f)
-
-        self.__dict__ = state_dict
-        return self
-    
-    
-    def save_to_path(self, pk_path):
-
-        with open(pk_path, "wb+") as f:
-            pickler = pickle.Pickler(f)
-            pickler.dump(self.__dict__)
-    
-    def convert_text_to_tensor(self, 
-                               doc: str | List[str], 
-                               tokenize: bool=True ) -> torch.Tensor: 
-        
-        tokens = doc if not tokenize else self.tokenizer(doc)
-        text_tensor = [self.lang_vocab[token] for token in tokens]
-        text_tensor = torch.tensor(text_tensor, dtype=torch.int64)
+        text_tensor = lang_vocab.lookup_indices(tokens)
+        text_tensor = torch.tensor(text_tensor, dtype=torch.long)
 
         return text_tensor
-    
-    def serialize(self, path):
 
-        with open(path, "wb+") as f:
-            pickler = pickle.Pickler(f)
-            pickler.dump(self.__dict__)
-
-    def __build_vocab__(self,
-                        corpus: List[str],
-                        specials: List[str]):
+    @classmethod
+    def build_vocab(cls, corpus: List[str],
+                    specials: List[str]=["<PAD_IDX>","<UNK_IDX>"],
+                    default_token: str = "<UNK_IDX>"):
         
         counter = Counter()
         for text in corpus:
-            tokens = self.tokenizer(text)
+            tokens = cls.tokenizer(text)
             counter.update(tokens)
 
         sorted_by_freq_tuples = sorted(counter.items(), 
@@ -75,4 +43,28 @@ class TextTensorBuilder:
         ordered_dict = OrderedDict(sorted_by_freq_tuples)    
         result = vocab(ordered_dict, specials=specials)
 
+        result.set_default_index(result[default_token])
+
         return result
+    
+    
+        
+    
+
+
+    
+
+### MODULE FUNCTIONS ###
+def save_to_path(obj, pk_path):
+
+    with open(pk_path, "wb+") as f:
+        pickler = pickle.Pickler(f)
+        pickler.dump(obj.__dict__)
+
+def load_from_path(pk_path: str) -> TextTensorBuilder:
+        
+    obj = TextTensorBuilder()
+    with open(pk_path, "rb") as f:
+
+        obj.__dict__ = pickle.load(f)
+    return obj

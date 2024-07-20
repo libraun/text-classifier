@@ -19,7 +19,6 @@ class TextClassifier(nn.Module):
                                          padding_idx=padding_idx,
                                          sparse=False)
         
-        
         self.lin1 = nn.Linear(embed_dim, hidden_dim)
         self.lin2 = nn.Linear(hidden_dim, hidden_dim)
 
@@ -33,6 +32,8 @@ class TextClassifier(nn.Module):
             self.optimizer = optim.MSELoss(self.parameters(), lr=lr)
         elif optimizer == "sgd":
             self.optimizer = optim.SGD(self.parameters(), lr=lr)
+        else:
+            raise Exception()
 
         self.criterion = criterion
         
@@ -86,8 +87,9 @@ class TextClassifier(nn.Module):
                 epoch_loss += loss.item()
             # Add mean loss value as epoch loss.
             epoch_loss = epoch_loss / len(train_data)
-            print(epoch_loss)
             val_loss = self.evaluate_model(valid_data)
+
+            print("Epoch Loss:", epoch_loss, "|", "Val loss:", val_loss)
 
             train_loss_values.append(epoch_loss)
             validation_loss_values.append(val_loss)
@@ -96,9 +98,9 @@ class TextClassifier(nn.Module):
     def predict(self, input_tensor) -> int:
 
         labels = torch.tensor([0, input_tensor.size(0)], 
-                              dtype=torch.int64)
+                              dtype=torch.int32)
+        
         prediction = self.forward(input_tensor, labels)
 
         predicted_idx = prediction.argmax().item()
-
         return predicted_idx
